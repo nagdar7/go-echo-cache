@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/coocood/freecache"
 	"github.com/labstack/echo/v4"
 	"github.com/mcuadros/go-defaults"
 )
@@ -28,7 +27,13 @@ type Config struct {
 	Cache func(r *http.Request) bool
 }
 
-func New(cfg *Config, cache *freecache.Cache) echo.MiddlewareFunc {
+type Cache interface {
+	Set(key, value []byte, ttl int) error
+	Get(key []byte) ([]byte, error)
+	GetNotFoundErr() error
+}
+
+func New(cfg *Config, cache Cache) echo.MiddlewareFunc {
 	if cfg == nil {
 		cfg = &Config{}
 	}
@@ -40,7 +45,7 @@ func New(cfg *Config, cache *freecache.Cache) echo.MiddlewareFunc {
 
 type CacheMiddleware struct {
 	cfg   *Config
-	cache *freecache.Cache
+	cache Cache
 }
 
 func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
@@ -59,7 +64,7 @@ func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		if err != freecache.ErrNotFound {
+		if err != m.cache.GetNotFoundErr() {
 			c.Logger().Errorf("error reading cache: %s", err)
 		}
 
@@ -77,7 +82,7 @@ func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
 
 func (m *CacheMiddleware) readCache(key []byte, c echo.Context) error {
 	if m.cfg.Refresh != nil && m.cfg.Refresh(c.Request()) {
-		return freecache.ErrNotFound
+		return m.cache.GetNotFoundErr()
 	}
 
 	value, err := m.cache.Get(key)
