@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/coocood/freecache"
 	"github.com/labstack/echo/v4"
 	"github.com/mcuadros/go-defaults"
 )
@@ -25,12 +26,18 @@ type Config struct {
 	// Cache fuction called before cache a request, if false, the request is not
 	// cached. If set Method is ignored.
 	Cache func(r *http.Request) bool
+	// GetNotFoundErr is a function that returns the error that signals that the cache entry was not found.
+	// To maintain backwards compatibility, the default value which it returns is freecache.ErrNotFound
+	GetNotFoundErr func() error
+}
+
+func defaultGetNotFoundErr() error {
+	return freecache.ErrNotFound
 }
 
 type Cache interface {
 	Set(key, value []byte, ttl int) error
 	Get(key []byte) ([]byte, error)
-	GetNotFoundErr() error
 }
 
 func New(cfg *Config, cache Cache) echo.MiddlewareFunc {
@@ -39,6 +46,9 @@ func New(cfg *Config, cache Cache) echo.MiddlewareFunc {
 	}
 
 	defaults.SetDefaults(cfg)
+	if cfg.GetNotFoundErr == nil {
+		cfg.GetNotFoundErr = defaultGetNotFoundErr
+	}
 	m := &CacheMiddleware{cfg: cfg, cache: cache}
 	return m.Handler
 }
@@ -64,7 +74,7 @@ func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		if err != m.cache.GetNotFoundErr() {
+		if err != m.cfg.GetNotFoundErr() {
 			c.Logger().Errorf("error reading cache: %s", err)
 		}
 
@@ -82,7 +92,7 @@ func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
 
 func (m *CacheMiddleware) readCache(key []byte, c echo.Context) error {
 	if m.cfg.Refresh != nil && m.cfg.Refresh(c.Request()) {
-		return m.cache.GetNotFoundErr()
+		return m.cfg.GetNotFoundErr()
 	}
 
 	value, err := m.cache.Get(key)
