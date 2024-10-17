@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -74,7 +75,7 @@ func (m *CacheMiddleware) Handler(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		if err != m.cfg.GetNotFoundErr() {
+		if !errors.Is(err, m.cfg.GetNotFoundErr()) {
 			c.Logger().Errorf("error reading cache: %s", err)
 		}
 
